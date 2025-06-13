@@ -17,7 +17,6 @@ while (!session.IsCancelled)
     renderer.TryRender(devices);
     session.Sleep();
 }
-// At the end of the main loop, only clear the screen if CleanupScreen is true
 if (cliParameters.CleanupScreen)
     AnsiConsole.Clear();
 
