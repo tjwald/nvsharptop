@@ -155,7 +155,7 @@ class DeviceCollection : IEnumerable<DeviceInfo>
     public DateTime LastDisplay = DateTime.UtcNow;
     private List<DeviceInfo> devices = new();
 
-    public DeviceHistory GetHistory(DeviceInfo device)
+    public DeviceHistory? GetHistory(DeviceInfo device)
     {
         return History.TryGetValue(device.Id, out var hist) ? hist : null;
     }
@@ -225,10 +225,25 @@ record CliParameters(double SampleInterval, double DisplayInterval, bool Cleanup
 {
     public static CliParameters Create(string[] args)
     {
+        if (args.Any(a => a == "--help" || a == "-h"))
+        {
+            PrintHelp();
+            Environment.Exit(0);
+        }
         double sample = ParseArg(args, "--sample-interval", 0.1);
         double display = ParseArg(args, "--display-interval", 3);
         bool cleanup = ParseBoolArg(args, "--cleanup-screen", true);
         return new CliParameters(sample, display, cleanup);
+    }
+
+    private static void PrintHelp()
+    {
+        Console.WriteLine("Usage: dotnet run nvsharptop.cs [options]\n");
+        Console.WriteLine("Options:");
+        Console.WriteLine("  --sample-interval <sec>   Set the sample interval in seconds (default: 0.1)");
+        Console.WriteLine("  --display-interval <sec>  Set the display refresh interval in seconds (default: 3)");
+        Console.WriteLine("  --cleanup-screen <true|false>  Clear the screen on exit (default: true)");
+        Console.WriteLine("  --help, -h                Show this help message and exit");
     }
 
     private static double ParseArg(string[] args, string name, double def)
