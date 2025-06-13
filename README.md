@@ -1,4 +1,4 @@
-## Cross plateform nvidia gpu utilization cli viewer
+## Cross platform nvidia gpu utilization cli viewer
 
 ### Requirments:
 * `nvidia-smi` (part of cuda driver installation).
