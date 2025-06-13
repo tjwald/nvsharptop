@@ -1,8 +1,8 @@
-## Cross platform nvidia gpu utilization cli viewer
+## Cross-platform NVIDIA GPU utilization CLI viewer
 
-### Requirments:
-* `nvidia-smi` (part of cuda driver installation).
-* dotnet 10 SDK (>preview 5)
+### Requirements:
+* `nvidia-smi` (part of CUDA driver installation).
+* Dotnet 10 SDK (>= preview 5)
 
 ### Usage:
 
@@ -10,7 +10,7 @@
 dotnet run nvsharptop.cs [--sample-interval <sec>] [--display-interval <sec>]
 ```
 
-On linux machines, you can If you wish to run the tool directly you can:
+On Linux machines, if you wish to run the tool directly, you can:
 * Add: `#!/usr/bin/dotnet` to the first line
 * Run `chmod +x nvsharptop.cs` to enable running the script directly.
 
@@ -22,4 +22,4 @@ And then run like so: nvsharptop.cs
 
 
 ### Notice
-This tool was developed with the aid of copilot in vscode in agent mode.
+This tool was developed with the aid of Copilot in VS Code in agent mode.
