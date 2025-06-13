@@ -6,28 +6,18 @@ using Spectre.Console;
 using Spectre.Console.Rendering;
 
 
-var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 var cliParameters = CliParameters.Create(args);
+var session = new UserSession(cliParameters);
 var devices = new DeviceCollection();
 AnsiConsole.Clear();
-
 var renderer = new DeviceCollectionRenderer(cliParameters.DisplayInterval);
-while (!cts.Token.IsCancellationRequested)
+while (!session.IsCancelled)
 {
     devices.Update();
     renderer.TryRender(devices);
-    SleepLoop(cliParameters.SampleInterval, cts.Token);
+    session.Sleep();
 }
 AnsiConsole.Clear();
-
-
-static void SleepLoop(double seconds, CancellationToken token)
-{
-    int ticks = (int)(seconds * 10);
-    for (int i = 0; i < ticks && !token.IsCancellationRequested; i++)
-        token.WaitHandle.WaitOne(100);
-}
 
 
 class DeviceCollectionDisplay
@@ -279,4 +269,23 @@ class DeviceCollectionRenderer
     {
         return (DateTime.UtcNow - lastDisplay).TotalSeconds >= displayInterval;
     }
+}
+
+class UserSession
+{
+    private readonly CancellationTokenSource cts = new();
+    private readonly double sampleInterval;
+    public CancellationToken Token => cts.Token;
+    public UserSession(CliParameters cliParameters)
+    {
+        sampleInterval = cliParameters.SampleInterval;
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+    }
+    public void Sleep()
+    {
+        int ticks = (int)(sampleInterval * 10);
+        for (int i = 0; i < ticks && !cts.Token.IsCancellationRequested; i++)
+            cts.Token.WaitHandle.WaitOne(100);
+    }
+    public bool IsCancelled => cts.IsCancellationRequested;
 }
