@@ -6,17 +6,15 @@ using Spectre.Console;
 using Spectre.Console.Rendering;
 
 
-// Main function at the top
 var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
-(double sampleInterval, double displayInterval) = ParseIntervals(args);
-var state = NvSharpTopInit();
+var cliParameters = CliParameters.Create(args);
+var devices = new DeviceCollection();
 AnsiConsole.Clear();
 int i = 0;
 while (!cts.Token.IsCancellationRequested)
 {
-    var gpus = QueryGpus();
-    CollectGpuSamples(state, gpus);
+    devices.Update();
 
     int consoleWidth = Console.WindowWidth;
     int graphHeight = 10;
@@ -24,17 +22,17 @@ while (!cts.Token.IsCancellationRequested)
     int availableWidth, graphWidth;
     (graphWidth, availableWidth) = CalculateGraphWidth(consoleWidth, yAxisWidth);
 
-    if (ShouldDisplay(state, displayInterval))
+    if (ShouldDisplay(devices.LastDisplay, cliParameters.DisplayInterval))
     {
-        UpdateGpuHistory(state, gpus, graphWidth);
+        devices.UpdateDeviceHistory(graphWidth);
         List<IRenderable> renderables = [];
-        foreach (var gpu in gpus)
+        foreach (var device in devices)
         {
-            var samples = state.History[gpu.Index].GetSamples();
-            renderables.AddRange(RenderGpuChartSpectre(gpu, samples, graphWidth, graphHeight, availableWidth));
+            var samples = devices.History[device.Id].GetSamples();
+            renderables.AddRange(RenderDeviceChartSpectre(device, samples, graphWidth, graphHeight, availableWidth));
         }
-        renderables.AddRange(RenderGpuTableSpectre(gpus, displayInterval));
-        state.LastDisplay = DateTime.UtcNow;
+        renderables.AddRange(RenderDeviceTableSpectre(devices.ToList(), cliParameters.DisplayInterval));
+        devices.LastDisplay = DateTime.UtcNow;
 
         Console.CursorVisible = false;
         Console.SetCursorPosition(0, 0);
@@ -46,7 +44,7 @@ while (!cts.Token.IsCancellationRequested)
         }
         AnsiConsole.Write(grid);
     }
-    SleepLoop(sampleInterval, cts.Token);
+    SleepLoop(cliParameters.SampleInterval, cts.Token);
 }
 
 
@@ -57,61 +55,9 @@ static (int graphWidth, int availableWidth) CalculateGraphWidth(int consoleWidth
     return (graphWidth, availableWidth);
 }
 
-static NvSharpTopState NvSharpTopInit() => new NvSharpTopState();
-
-static void CollectGpuSamples(NvSharpTopState state, List<GpuInfo> gpus)
+static bool ShouldDisplay(DateTime lastDisplay, double displayInterval)
 {
-    foreach (var g in gpus)
-    {
-        if (!state.SampleBuffer.TryGetValue(g.Index, out var buf))
-            state.SampleBuffer[g.Index] = buf = new List<GpuSample>();
-        int memPct = (int)(g.MemUsed * 100.0 / g.MemTotal);
-        buf.Add(new GpuSample(g.Util, memPct));
-    }
-}
-
-static bool ShouldDisplay(NvSharpTopState state, double displayInterval)
-{
-    return (DateTime.UtcNow - state.LastDisplay).TotalSeconds >= displayInterval;
-}
-
-static void UpdateGpuHistory(NvSharpTopState state, List<GpuInfo> gpus, int graphWidth)
-{
-    foreach (var g in gpus)
-    {
-        if (!state.History.TryGetValue(g.Index, out var hist))
-            state.History[g.Index] = hist = new GpuHistory();
-        var buf = state.SampleBuffer[g.Index];
-        int avgUtil = (int)buf.Average(x => x.Util);
-        int avgMem = (int)buf.Average(x => x.MemPct);
-        hist.AddSample(new GpuSample(avgUtil, avgMem), graphWidth);
-        buf.Clear();
-    }
-}
-
-static List<GpuInfo> QueryGpus()
-{
-    var psi = new ProcessStartInfo
-    {
-        FileName = "nvidia-smi",
-        Arguments = "--query-gpu=index,name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits",
-        RedirectStandardOutput = true,
-        UseShellExecute = false,
-        CreateNoWindow = true
-    };
-    using var p = Process.Start(psi)!;
-    var outp = p.StandardOutput.ReadToEnd();
-    p.WaitForExit();
-    return outp
-        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-        .Select(l => l.Split(',', StringSplitOptions.TrimEntries))
-        .Where(a => a.Length == 6)
-        .Select(a => new GpuInfo(
-            int.Parse(a[0]), a[1],
-            int.Parse(a[2]), int.Parse(a[3]),
-            int.Parse(a[4]), int.Parse(a[5])
-        ))
-        .ToList();
+    return (DateTime.UtcNow - lastDisplay).TotalSeconds >= displayInterval;
 }
 
 static void SleepLoop(double seconds, CancellationToken token)
@@ -121,27 +67,13 @@ static void SleepLoop(double seconds, CancellationToken token)
         token.WaitHandle.WaitOne(100);
 }
 
-static (double sampleInterval, double displayInterval) ParseIntervals(string[] args)
-{
-    double sample = ParseArg(args, "--sample-interval", 0.1);
-    double display = ParseArg(args, "--display-interval", 3);
-    return (sample, display);
-}
-
-static double ParseArg(string[] args, string name, double def)
-{
-    for (int i = 0; i + 1 < args.Length; i++)
-        if (args[i] == name && double.TryParse(args[i + 1], out var t) && t > 0) return t;
-    return def;
-}
-
 static string Truncate(string s, int m) => s.Length <= m ? s : s[..(m - 1)] + "…";
 
 // Display logic
-static List<IRenderable> RenderGpuChartSpectre(GpuInfo gpu, GpuSample[] samples, int graphWidth, int graphHeight, int _)
+static List<IRenderable> RenderDeviceChartSpectre(DeviceInfo device, DeviceSample[] samples, int graphWidth, int graphHeight, int _)
 {
     List<IRenderable> renderables = [
-        new Markup($"[bold]GPU {gpu.Index}[/] [grey]{Truncate(gpu.Name, 30)}[/]\n")
+        new Markup($"[bold]{device.Type} {device.Id}[/] [grey]{Truncate(device.Name, 30)}[/]\n")
     ];
     var grid = new Grid();
     grid.AddColumn();
@@ -178,25 +110,27 @@ static List<IRenderable> RenderGpuChartSpectre(GpuInfo gpu, GpuSample[] samples,
     return renderables;
 }
 
-static List<IRenderable> RenderGpuTableSpectre(List<GpuInfo> gpus, double pollTime)
+static List<IRenderable> RenderDeviceTableSpectre(List<DeviceInfo> devices, double pollTime)
 {
     List<IRenderable> renderables = [];
     var table = new Table();
-    table.AddColumn("GPU");
+    table.AddColumn("Type");
+    table.AddColumn("Id");
     table.AddColumn("Name");
     table.AddColumn("Temp");
     table.AddColumn("Util");
     table.AddColumn("Mem");
-    foreach (var g in gpus)
+    foreach (var device in devices)
     {
-        string tempColor = g.Temp >= 80 ? "red" : g.Temp >= 60 ? "yellow" : "green";
-        string utilColor = g.Util >= 80 ? "red" : g.Util >= 40 ? "yellow" : "green";
+        string tempColor = device.Temp >= 80 ? "red" : device.Temp >= 60 ? "yellow" : "green";
+        string utilColor = device.Util >= 80 ? "red" : device.Util >= 40 ? "yellow" : "green";
         table.AddRow(
-            $"[bold]{g.Index}[/]",
-            g.Name,
-            $"[{tempColor}]{g.Temp}°C[/]",
-            $"[{utilColor}]{g.Util}%[/]",
-            $"[cyan]{g.MemUsed}[/]/[grey]{g.MemTotal}[/]"
+            device.Type.ToString(),
+            $"[bold]{device.Id}[/]",
+            device.Name,
+            $"[{tempColor}]{device.Temp}°C[/]",
+            $"[{utilColor}]{device.Util}%[/]",
+            $"[cyan]{device.MemUsed}[/]/[grey]{device.MemTotal}[/]"
         );
     }
     renderables.Add(table);
@@ -205,29 +139,113 @@ static List<IRenderable> RenderGpuTableSpectre(List<GpuInfo> gpus, double pollTi
 }
 
 // Data structures
-class GpuSample
+class DeviceSample
 {
     public int Util { get; set; }
     public int MemPct { get; set; }
-    public GpuSample(int util, int memPct) { Util = util; MemPct = memPct; }
+    public DeviceSample(int util, int memPct) { Util = util; MemPct = memPct; }
 }
 
-class GpuHistory
+class DeviceHistory
 {
-    public Queue<GpuSample> Samples { get; } = new();
-    public void AddSample(GpuSample sample, int maxSamples)
+    public Queue<DeviceSample> Samples { get; } = new();
+    public void AddSample(DeviceSample sample, int maxSamples)
     {
         Samples.Enqueue(sample);
         while (Samples.Count > maxSamples) Samples.Dequeue();
     }
-    public GpuSample[] GetSamples() => Samples.ToArray();
+    public DeviceSample[] GetSamples() => Samples.ToArray();
 }
 
-record GpuInfo(int Index, string Name, int Temp, int Util, int MemUsed, int MemTotal);
-
-class NvSharpTopState
+// Device type enum
+public enum DeviceType
 {
-    public Dictionary<int, GpuHistory> History = new();
-    public Dictionary<int, List<GpuSample>> SampleBuffer = new();
+    Gpu
+}
+
+record DeviceInfo(string Id, string Name, int Temp, int Util, int MemUsed, int MemTotal, DeviceType Type);
+
+class DeviceCollection : IEnumerable<DeviceInfo>
+{
+    public Dictionary<string, DeviceHistory> History = new();
+    public Dictionary<string, List<DeviceSample>> SampleBuffer = new();
     public DateTime LastDisplay = DateTime.UtcNow;
+    private List<DeviceInfo> devices = new();
+
+    public void Update()
+    {
+        devices = QueryDevices();
+        CollectDeviceSamples();
+    }
+
+    public void UpdateDeviceHistory(int graphWidth)
+    {
+        foreach (var device in devices)
+        {
+            if (!History.TryGetValue(device.Id, out var hist))
+                History[device.Id] = hist = new DeviceHistory();
+            var buf = SampleBuffer[device.Id];
+            int avgUtil = (int)buf.Average(x => x.Util);
+            int avgMem = (int)buf.Average(x => x.MemPct);
+            hist.AddSample(new DeviceSample(avgUtil, avgMem), graphWidth);
+            buf.Clear();
+        }
+    }
+
+    private List<DeviceInfo> QueryDevices()
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "nvidia-smi",
+            Arguments = "--query-gpu=index,name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits",
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        using var p = Process.Start(psi)!;
+        var outp = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        return outp
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Split(',', StringSplitOptions.TrimEntries))
+            .Where(a => a.Length == 6)
+            .Select(a => new DeviceInfo(
+                a[0], a[1],
+                int.Parse(a[2]), int.Parse(a[3]),
+                int.Parse(a[4]), int.Parse(a[5]),
+                DeviceType.Gpu
+            ))
+            .ToList();
+    }
+
+    private void CollectDeviceSamples()
+    {
+        foreach (var device in devices)
+        {
+            if (!SampleBuffer.TryGetValue(device.Id, out var buf))
+                SampleBuffer[device.Id] = buf = new List<DeviceSample>();
+            int memPct = (int)(device.MemUsed * 100.0 / device.MemTotal);
+            buf.Add(new DeviceSample(device.Util, memPct));
+        }
+    }
+
+    public IEnumerator<DeviceInfo> GetEnumerator() => devices.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+record CliParameters(double SampleInterval, double DisplayInterval)
+{
+    public static CliParameters Create(string[] args)
+    {
+        double sample = ParseArg(args, "--sample-interval", 0.1);
+        double display = ParseArg(args, "--display-interval", 3);
+        return new CliParameters(sample, display);
+    }
+
+    private static double ParseArg(string[] args, string name, double def)
+    {
+        for (int i = 0; i + 1 < args.Length; i++)
+            if (args[i] == name && double.TryParse(args[i + 1], out var t) && t > 0) return t;
+        return def;
+    }
 }
