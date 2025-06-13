@@ -17,7 +17,9 @@ while (!session.IsCancelled)
     renderer.TryRender(devices);
     session.Sleep();
 }
-AnsiConsole.Clear();
+// At the end of the main loop, only clear the screen if CleanupScreen is true
+if (cliParameters.CleanupScreen)
+    AnsiConsole.Clear();
 
 
 class DeviceCollectionDisplay
@@ -220,19 +222,30 @@ class DeviceCollection : IEnumerable<DeviceInfo>
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
-record CliParameters(double SampleInterval, double DisplayInterval)
+record CliParameters(double SampleInterval, double DisplayInterval, bool CleanupScreen)
 {
     public static CliParameters Create(string[] args)
     {
         double sample = ParseArg(args, "--sample-interval", 0.1);
         double display = ParseArg(args, "--display-interval", 3);
-        return new CliParameters(sample, display);
+        bool cleanup = ParseBoolArg(args, "--cleanup-screen", true);
+        return new CliParameters(sample, display, cleanup);
     }
 
     private static double ParseArg(string[] args, string name, double def)
     {
         for (int i = 0; i + 1 < args.Length; i++)
             if (args[i] == name && double.TryParse(args[i + 1], out var t) && t > 0) return t;
+        return def;
+    }
+    private static bool ParseBoolArg(string[] args, string name, bool def)
+    {
+        for (int i = 0; i < args.Length; i++)
+            if (args[i] == name)
+            {
+                if (i + 1 < args.Length && bool.TryParse(args[i + 1], out var b)) return b;
+                return true;
+            }
         return def;
     }
 }
