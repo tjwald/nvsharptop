@@ -28,7 +28,7 @@ while (!cts.Token.IsCancellationRequested)
         List<IRenderable> renderables = [];
         foreach (var device in devices)
         {
-            var samples = devices.History[device.Id].GetSamples();
+            var samples = devices.GetHistory(device)?.GetSamples() ?? Array.Empty<DeviceSample>();
             renderables.AddRange(RenderDeviceChartSpectre(device, samples, graphWidth, graphHeight, availableWidth));
         }
         renderables.AddRange(RenderDeviceTableSpectre(devices.ToList(), cliParameters.DisplayInterval));
@@ -171,6 +171,11 @@ class DeviceCollection : IEnumerable<DeviceInfo>
     public Dictionary<string, List<DeviceSample>> SampleBuffer = new();
     public DateTime LastDisplay = DateTime.UtcNow;
     private List<DeviceInfo> devices = new();
+
+    public DeviceHistory GetHistory(DeviceInfo device)
+    {
+        return History.TryGetValue(device.Id, out var hist) ? hist : null;
+    }
 
     public void Update()
     {
