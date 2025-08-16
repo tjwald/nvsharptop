@@ -1,4 +1,4 @@
-#:property PublishAot true
+#:property PublishAot=true
 #:package Spectre.Console@*
 
 using System.Diagnostics;
