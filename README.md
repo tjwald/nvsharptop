@@ -2,7 +2,7 @@
 
 ### Requirements:
 * `nvidia-smi` (part of CUDA driver installation).
-* Dotnet 10 SDK (>= preview 5)
+* Dotnet 10 SDK (>= preview 7)
 
 ### Usage:
 
